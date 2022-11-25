@@ -1,0 +1,502 @@
+# SPDX-License-Identifier: MIT
+# OpenZeppelin Contracts for Cairo v0.2.1 (token/erc721/ERC721_Mintable_Burnable.cairo)
+
+%lang starknet
+%builtins pedersen range_check ecdsa
+
+from starkware.cairo.common.cairo_builtins import HashBuiltin
+from starkware.cairo.common.uint256 import (
+    Uint256, uint256_add, uint256_sub
+)
+
+
+from openzeppelin.access.ownable import Ownable
+from openzeppelin.introspection.ERC165 import ERC165
+from openzeppelin.token.erc721.library import ERC721
+from starkware.starknet.common.syscalls import (get_caller_address, get_contract_address)
+
+from contracts.token.ERC721.IERC721 import IERC721
+from contracts.token.ERC20.IERC20 import IERC20
+
+from starkware.cairo.common.math import (
+    assert_not_zero, assert_not_equal, assert_lt
+)
+
+#
+# Data structures
+#
+
+struct Animal:
+    member sex: felt
+    member legs: felt
+    member wings: felt
+end
+
+
+
+#
+# Constants
+#
+
+const REGISTRATION_PRICE = 123
+const dummy_token_address = 0x25dd23fa28df0658219131c6fdefe5bd3b26456935bff9872a82aaa482ceaea
+const evaluator_address = 0x2004d22f8e1ee0ee93c27cfb377e09341ea3cc4231987c24e89442fa27e4a6c
+
+
+#
+# Storage
+#
+
+#@storage_var
+#func token_of_owner_by_index(account : felt, index : felt) -> (token_id : Uint256):
+#end
+
+#@storage_var
+#func next_token_id() -> (next_token_id: felt):
+#end
+
+#@storage_var
+#func animals(token_id: felt) -> (animal: Animal):
+#end
+
+      @event
+      func an_animal_is_dead(token_id: Uint256):
+      end
+
+
+@storage_var
+func animals(token_id: felt) -> (animal: Animal):
+end
+
+@storage_var
+func is_breeder_map(account: felt) -> (is_approved: felt):
+end
+
+@storage_var
+func is_animal_dead(token_id: felt) -> (is_dead: felt):
+end
+
+#@storage_var
+#func registration_price() -> (price : Uint256):
+#end
+
+
+#
+# Constructor
+#
+
+@constructor
+func constructor{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(
+        name: felt,
+        symbol: felt,
+        owner: felt
+    ):
+    ERC721.initializer(name, symbol)
+    Ownable.initializer(owner)
+    return ()
+end
+
+#
+# Getters
+#
+
+@view
+func supportsInterface{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(interfaceId: felt) -> (success: felt):
+    let (success) = ERC165.supports_interface(interfaceId)
+    return (success)
+end
+
+@view
+func name{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }() -> (name: felt):
+    let (name) = ERC721.name()
+    return (name)
+end
+
+@view
+func symbol{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }() -> (symbol: felt):
+    let (symbol) = ERC721.symbol()
+    return (symbol)
+end
+
+@view
+func balanceOf{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(owner: felt) -> (balance: Uint256):
+    let (balance: Uint256) = ERC721.balance_of(owner)
+    return (balance)
+end
+
+@view
+func ownerOf{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(tokenId: Uint256) -> (owner: felt):
+    let (owner: felt) = ERC721.owner_of(tokenId)
+    return (owner)
+end
+
+@view
+func getApproved{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(tokenId: Uint256) -> (approved: felt):
+    let (approved: felt) = ERC721.get_approved(tokenId)
+    return (approved)
+end
+
+@view
+func isApprovedForAll{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }(owner: felt, operator: felt) -> (isApproved: felt):
+    let (isApproved: felt) = ERC721.is_approved_for_all(owner, operator)
+    return (isApproved)
+end
+
+@view
+func tokenURI{
+        syscall_ptr: felt*,
+        pedersen_ptr: HashBuiltin*,
+        range_check_ptr
+    }(tokenId: Uint256) -> (tokenURI: felt):
+    let (tokenURI: felt) = ERC721.token_uri(tokenId)
+    return (tokenURI)
+end
+
+@view
+func owner{
+        syscall_ptr : felt*,
+        pedersen_ptr : HashBuiltin*,
+        range_check_ptr
+    }() -> (owner: felt):
+    let (owner: felt) = Ownable.owner()
+    return (owner)
+end
+
+
+
+@view
+func get_animal_characteristics{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+        token_id:  Uint256) -> (sex:  felt, legs:  felt, wings:  felt):
+    # Ensures token_id is valid
+    #let (exists) = _exists(token_id)
+    #assert exists = 1
+    # Get the animal
+    let (animal) = animals.read(token_id=token_id.low)
+    return (animal.sex, animal.legs, animal.wings)
+end
+
+@view
+func is_breeder{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+        account: felt) -> (is_approved: felt):
+    let (is_breeder) = is_breeder_map.read(account)
+    return (is_approved=is_breeder)
+end
+
+@view
+func registration_price{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+    ) -> (price : Uint256):
+    return (price=Uint256(REGISTRATION_PRICE, 0))
+end
+
+        #@view
+        #func get_animal_characteristics{
+        #    syscall_ptr : felt*,
+        #    range_check_ptr
+        #    }(token_id : Uint256) -> (sex : felt, legs : felt, wings : felt):
+        #    return (sex, legs, wings)
+        #end
+
+
+@view
+func token_of_owner_by_index{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+        account: felt, index: felt) -> (token_id:  Uint256):
+    let (balance) = ERC721.balance_of(account)
+    assert_not_zero(balance.low)
+    assert_lt(index, balance.low)
+
+    # Start a recursive search
+    let (max_token_index) = uint256_sub(balance, Uint256(1, 0))
+    let (token_id) = token_of_owner_by_index_search(
+        account=account,
+        target_token_index=index,
+        current_token_index=0,
+        max_token_index=max_token_index.low,
+        search_token_index=0,
+    )
+    return (token_id)
+end
+
+
+
+#
+# Externals
+#
+
+@external
+func approve{
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
+        range_check_ptr
+    }(to: felt, token_id: Uint256):
+    ERC721.approve(to, token_id)
+    return ()
+end
+
+@external
+func setApprovalForAll{
+        syscall_ptr: felt*,
+        pedersen_ptr: HashBuiltin*,
+        range_check_ptr
+    }(operator: felt, approved: felt):
+    ERC721.set_approval_for_all(operator, approved)
+    return ()
+end
+
+@external
+func transferFrom{
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
+        range_check_ptr
+    }(
+        from_: felt,
+        to: felt,
+        token_id: Uint256
+    ):
+    ERC721.transfer_from(from_, to, token_id)
+    return ()
+end
+
+@external
+func safeTransferFrom{
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
+        range_check_ptr
+    }(
+        from_: felt,
+        to: felt,
+        token_id: Uint256,
+        data_len: felt,
+        data: felt*
+    ):
+    ERC721.safe_transfer_from(from_, to, token_id, data_len, data)
+    return ()
+end
+
+@external
+func declare_animal{pedersen_ptr: HashBuiltin*, syscall_ptr: felt*, range_check_ptr}(
+        sex: felt, legs: felt, wings: felt) -> (token_id: Uint256):
+        let (caller_address) = get_caller_address()
+        assert_not_zero(caller_address)
+        
+        let token_id = 0
+        
+        animals.write(
+        0,  
+        value=Animal(sex=sex, legs=legs, wings=wings)
+        )
+        
+  # Mint the token
+    ERC721._mint(caller_address, Uint256(token_id, 0))
+
+    # Update the next token id
+    #let (token_id) = next_token_id.read()
+    #next_token_id.write(token_id + 1)
+
+    return (Uint256(token_id, 0))
+end
+
+@external
+func register_me_as_breeder{pedersen_ptr: HashBuiltin*, syscall_ptr: felt*, range_check_ptr}(
+        ) -> (is_added:  felt):
+    # Check that the caller is not zero
+    let (caller_address) = get_caller_address()
+    assert_not_zero(caller_address)
+    
+    #Charge dummy token to Evaluator
+    let (self_address) = get_contract_address()
+    IERC20.transferFrom(contract_address=dummy_token_address, sender=evaluator_address, recipient=self_address, amount=Uint256(REGISTRATION_PRICE, 0))
+    
+    # Register as breeder
+    is_breeder_map.write(account=caller_address, value=1)
+    return (is_added=1)
+end
+
+
+
+@external
+func declare_dead_animal{pedersen_ptr: HashBuiltin*, syscall_ptr: felt*, range_check_ptr}(
+        token_id:  Uint256):
+    # Ensures token_id is valid
+    #let (exists) = _exists(token_id)
+    #assert exists = 1
+    # Set the animal dead
+    animals.write(
+        0,  
+        value=Animal(sex=0, legs=0, wings=0)
+        )
+    ERC721._burn(token_id)
+    return ()
+end
+
+#func declare_dead_animal{pedersen_ptr: HashBuiltin*, syscall_ptr: felt*, range_check_ptr}(
+#        token_id:  Uint256):
+#    # Ensures token_id is valid
+#    #let (exists) = _exists(token_id)
+#    #assert exists = 1
+#    # Set the animal dead
+#    is_animal_dead.write(token_id=(token_id.low), value=1)
+#    return ()
+#end
+
+#external
+#func declare_animal{
+#        pedersen_ptr: HashBuiltin*,
+#        syscall_ptr: felt*,
+#        range_check_ptr
+#        }(
+#        sex: felt, legs: felt, wings: felt) -> (token_id: Uint256):
+#        Ownable.assert_only_owner()
+#        
+#        let token_id : Uint256 = Uint256(1, 0)
+#        let (caller_address) = get_caller_address()
+#        
+#        animals.write(
+#        token_id=1,  
+#        value=Animal(sex=sex, legs=legs, wings=wings)
+#        )
+#  
+#        # Mint the token
+#        ERC721._mint(caller_address, token_id)
+#        
+#        # Update the next token id
+#        #let (token_id) = next_token_id.read()
+#        #next_token_id.write(token_id + 1)
+#       
+#    
+#    #ERC721._mint(to, token_id)
+#    return (token_id)
+#end
+
+#@external
+#func get_animal_characteristics{
+#    syscall_ptr : felt*,
+#    range_check_ptr
+#    }(token_id : Uint256, sex : Uint256, legs : Uint256, wings : c):
+#    return ()
+#end
+
+@external
+func burn{
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
+        range_check_ptr
+    }(token_id: Uint256):
+    ERC721.assert_only_token_owner(token_id)
+    ERC721._burn(token_id)
+    return ()
+end
+
+@external
+func setTokenURI{
+        pedersen_ptr: HashBuiltin*,
+        syscall_ptr: felt*,
+        range_check_ptr
+    }(token_id: Uint256, tokenURI: felt):
+    Ownable.assert_only_owner()
+    ERC721._set_token_uri(token_id, tokenURI)
+    return ()
+end
+
+@external
+func transferOwnership{
+        syscall_ptr: felt*,
+        pedersen_ptr: HashBuiltin*,
+        range_check_ptr
+    }(newOwner: felt):
+    Ownable.transfer_ownership(newOwner)
+    return ()
+end
+
+@external
+func renounceOwnership{
+        syscall_ptr: felt*,
+        pedersen_ptr: HashBuiltin*,
+        range_check_ptr
+    }():
+    Ownable.renounce_ownership()
+    return ()
+end
+
+#
+# Internals
+#
+
+func token_of_owner_by_index_search{syscall_ptr: felt*, pedersen_ptr: HashBuiltin*, range_check_ptr}(
+        account: felt, 
+        target_token_index: felt, 
+        current_token_index: felt, 
+        max_token_index: felt,
+        search_token_index: felt
+    ) -> (token_id:  Uint256):
+    let (owner) = ERC721.owner_of(Uint256(search_token_index, 0))
+
+    # If it's not the same owner continue to search
+    if owner != account:
+        # If it's not the last token
+        assert_not_equal(search_token_index, max_token_index)
+        # Search at the next index
+        let next_search_token_index = search_token_index + 1
+        let (result) = token_of_owner_by_index_search(
+            account=account,
+            target_token_index=target_token_index, 
+            current_token_index=current_token_index,
+            max_token_index=max_token_index,
+            search_token_index=next_search_token_index
+        )
+        return (result)
+    end
+
+    # If it is the owner, but it's not the target index
+    if target_token_index != current_token_index:
+         # If it's not the last token
+        assert_not_equal(search_token_index, max_token_index)
+        # Search at the next index, increasing the current token index too
+        let next_search_token_index = search_token_index + 1
+        let next_current_token_index = current_token_index + 1
+        let (result) = token_of_owner_by_index_search(
+            account=account,
+            target_token_index=target_token_index, 
+            current_token_index=next_current_token_index,
+            max_token_index=max_token_index,
+            search_token_index=next_search_token_index
+        )
+        return (result)
+    end
+
+    # Otherwise this is the correct token
+    return (token_id=Uint256(search_token_index, 0))
+end
+
+
